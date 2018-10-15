@@ -1,6 +1,6 @@
 # sortar
 A script to create an efficiently compressible .tar using a simple heuristic.
-Best use case is probably a directory of source code.
+The best use case is probably archiving of a directory of source code.
 
 This is a proof of concept and many things can be improved, but it works.
 The constants were chosen absolutely unscientifically.
