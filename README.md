@@ -13,7 +13,7 @@ The constants were chosen absolutely unscientifically.
 
 ### Usage
 
-For example, with zstd:
+For example, with [Zstandard](https://github.com/facebook/zstd):
 ```
 EXCLUDE_PATTERN="/\.git/" sortar <source_dir> | zstd -zc3 -o target.tar.zst
 ```
