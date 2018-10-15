@@ -8,7 +8,7 @@ from os.path import splitext
 
 FILESIZE_CATEGORIES = (1024, 128 * 1024)
 
-FILEHEADER_WEIGHT = 3
+FILEHEADER_WEIGHT = 5
 
 
 def get_filesize_category(filesize):
@@ -65,7 +65,8 @@ def main(cwd, exclude_pattern=None, match_pattern=None):
     tar_cmd = [
         'tar', '--create', '-O',
         '--transform', 's/^\.\///',
-        '--ignore-failed-read',
+        # '--posix',
+        '--record-size=512',
         '--no-recursion', '--null', '--files-from', '-'
     ]
     line_sep = b'\0'
@@ -85,7 +86,7 @@ def main(cwd, exclude_pattern=None, match_pattern=None):
             for fileext in sorted_fileexts:
                 filesizes_by_path = filesizes_by_ext_path_grouped[filesize_category][fileext]
                 sorted_paths = sorted(filesizes_by_path, 
-                                      key=lambda path: filesizes_by_path[path] >> FILEHEADER_WEIGHT)
+                                      key=lambda path: (filesizes_by_path[path] >> FILEHEADER_WEIGHT, path))
 
                 tar_in.write(line_sep.join(sorted_paths) + line_sep)
 
