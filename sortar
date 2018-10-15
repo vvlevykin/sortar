@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import os
+from os.path import splitext
+
+
+FILESIZE_CATEGORIES = (1024, 128 * 1024)
+
+FILEHEADER_WEIGHT = 3
+
+
+def get_filesize_category(filesize):
+    for i, limit in enumerate(FILESIZE_CATEGORIES):
+        if filesize <= limit:
+            return i
+    return len(FILESIZE_CATEGORIES)
+
+
+def make_find_cmd(exclude_pattern=None, match_pattern=None):
+    find_cmd = [
+        'find', '.',
+        '(', '-not', '-type', 'd', '-o', '-type', 'd', '-empty', ')',
+        '-regextype', 'egrep'
+    ]
+    if exclude_pattern:
+        find_cmd += ['-not', '-iregex', '.*{0}.*'.format(exclude_pattern)]
+    if match_pattern:
+        find_cmd += ['-iregex', '.*{0}.*'.format(match_pattern)]
+    find_cmd += ['-printf', '%p\\t%y\\t%s\\n']
+    return find_cmd
+
+
+def main(cwd, exclude_pattern=None, match_pattern=None):
+
+    max_filesize_by_ext_grouped = {n: {} for n in range(len(FILESIZE_CATEGORIES) + 1)}
+    filesizes_by_ext_path_grouped = {n: {} for n in range(len(FILESIZE_CATEGORIES) + 1)}
+    empty_dirs = []
+    empty_files = []
+
+    find_cmd = make_find_cmd(exclude_pattern, match_pattern)
+    with subprocess.Popen(find_cmd, cwd=cwd, close_fds=True,
+                          stdout=subprocess.PIPE, stderr=sys.stderr.buffer) as find_proc:
+
+        for line in find_proc.stdout:
+            (filepath, filetype, rawfilesize) = line[:-1].split(b'\t')
+            if filetype == b'd':
+                empty_dirs.append(filepath)
+            else:
+                filesize = int(rawfilesize)
+                if filesize == 0:
+                    empty_files.append(filepath)
+                else:
+                    filesize_category = get_filesize_category(filesize)
+                    fileext = splitext(filepath)[1]
+                    cur_max_filesize = max_filesize_by_ext_grouped[filesize_category].setdefault(
+                        fileext, filesize)
+                    if filesize > cur_max_filesize:
+                        max_filesize_by_ext_grouped[filesize_category][fileext] = filesize
+
+                    filesizes_by_ext_path_grouped[filesize_category].setdefault(
+                        fileext, {})[filepath] = filesize
+
+    tar_cmd = [
+        'tar', '--create', '-O',
+        '--transform', 's/^\.\///',
+        '--ignore-failed-read',
+        '--no-recursion', '--null', '--files-from', '-'
+    ]
+    line_sep = b'\0'
+    with subprocess.Popen(
+            tar_cmd, cwd=cwd, close_fds=True,
+            stdin=subprocess.PIPE, stdout=sys.stdout.buffer, stderr=sys.stderr.buffer) as tar_proc:
+        tar_in = tar_proc.stdin
+
+        if empty_dirs:
+            tar_in.write(line_sep.join(empty_dirs) + line_sep)
+        if empty_files:
+            tar_in.write(line_sep.join(empty_files) + line_sep)
+
+        for filesize_category, max_filesize_by_ext in max_filesize_by_ext_grouped.items():
+            sorted_fileexts = sorted(max_filesize_by_ext,
+                                     key=lambda fileext: max_filesize_by_ext[fileext])
+            for fileext in sorted_fileexts:
+                filesizes_by_path = filesizes_by_ext_path_grouped[filesize_category][fileext]
+                sorted_paths = sorted(filesizes_by_path, 
+                                      key=lambda path: filesizes_by_path[path] >> FILEHEADER_WEIGHT)
+
+                tar_in.write(line_sep.join(sorted_paths) + line_sep)
+
+
+if __name__ == '__main__':
+    main(sys.argv[1],
+         exclude_pattern=os.environ.get('EXCLUDE_PATTERN'),
+         match_pattern=os.environ.get('MATCH_PATTERN'))
